@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "u-Protrude3D"
+version = "0.1.0"
+description = "3D cell protrusion segmentation, benchmarking, and volumization"
+requires-python = ">=3.9, <3.13"
+authors = [{name='Felix Y. Zhou', email='felixzhou1@gmail.com'}]
+readme = "README.md"
+license={file = "LICENSE"}
+keywords = ["cell biology", "mesh segmentation", "protrusion", "filopodia", "lamellipodia"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12"
+]
+dependencies = [
+    "u-Unwrap3D",
+    "h5py",
+    "seaborn",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-cov", "black", "ruff"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"

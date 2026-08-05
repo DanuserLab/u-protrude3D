@@ -30,6 +30,48 @@ def get_vertex_colors(labels, palette=None, n_colors=24, random_seed=1232):
     return colors
 
 
+def blacken_label_borders(colors, labels, faces, border_color=(0, 0, 0), rings=1):
+    """Paint the boundary vertices between instances (and against background) black.
+
+    A vertex is on a border if any of its one-ring neighbours carries a different
+    label.  ``rings`` dilates the black ring by that many hops for visibility.
+
+    Parameters
+    ----------
+    colors : (N, 3) float array in [0, 1] – existing per-vertex colours.
+    labels : (N,) int array – 0 = background.
+    faces : (M, 3) int array.
+    border_color : RGB tuple in [0, 1].
+    rings : int – ring thickness in hops.
+
+    Returns
+    -------
+    colors : (N, 3) float array with border vertices recoloured.
+    """
+    import igl
+    labels = np.asarray(labels)
+    adj = igl.adjacency_list(np.asarray(faces))
+    border = np.zeros(len(labels), dtype=bool)
+    for v in range(len(labels)):
+        if labels[v] == 0:
+            continue
+        for w in adj[v]:
+            if labels[w] != labels[v]:
+                border[v] = True
+                break
+    for _ in range(int(rings) - 1):
+        grow = border.copy()
+        for v in np.where(border)[0]:
+            for w in adj[v]:
+                if labels[w] != 0:
+                    grow[w] = True
+        border = grow
+
+    colors = np.asarray(colors, dtype=float).copy()
+    colors[border] = border_color
+    return colors
+
+
 def scalar_to_vertex_colors(values, colormap, vmin=None, vmax=None):
     """Map a scalar field on vertices to RGB colours using a matplotlib colormap.
 

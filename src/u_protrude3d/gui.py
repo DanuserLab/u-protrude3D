@@ -199,7 +199,7 @@ def _build_segment_tab(notebook: ttk.Notebook, cfg: SegmentConfig, vars_map: dic
     _, lp_frame = _make_scrollable_frame(lp_outer)
 
     r = 0
-    lp_area = _build_labelframe(lp_frame, "Area thresholds", cfg.large_patch, ["min_max_area", "max_area_thresh_factor", "ridgeness_threshold", "occ_threshold"], vars_map, ("segment", "large_patch"))
+    lp_area = _build_labelframe(lp_frame, "Area thresholds", cfg.large_patch, ["min_max_area", "max_area_thresh_factor", "curv_ridge_ratio_threshold", "occ_threshold"], vars_map, ("segment", "large_patch"))
     lp_area.grid(row=r, column=0, sticky="ew", **_PADDING); r += 1
     lp_h = _build_labelframe(lp_frame, "H segmentation", cfg.large_patch, ["H_segment_method", "H_segment_otsu_n_levels", "H_segment_otsu_level", "second_seg_H_method", "second_seg_H_otsu_n_levels", "second_seg_H_otsu_level"], vars_map, ("segment", "large_patch"))
     lp_h.grid(row=r, column=0, sticky="ew", **_PADDING); r += 1
@@ -213,7 +213,7 @@ def _build_segment_tab(notebook: ttk.Notebook, cfg: SegmentConfig, vars_map: dic
     _, sp_frame = _make_scrollable_frame(sp_outer)
 
     r = 0
-    sp_thresh = _build_labelframe(sp_frame, "Ridgeness thresholds", cfg.std_patch, ["sure_noridge_threshold", "sure_ridge_threshold"], vars_map, ("segment", "std_patch"))
+    sp_thresh = _build_labelframe(sp_frame, "Ridgeness thresholds", cfg.std_patch, ["curv_ridge_ratio_threshold"], vars_map, ("segment", "std_patch"))
     sp_thresh.grid(row=r, column=0, sticky="ew", **_PADDING); r += 1
     sp_h = _build_labelframe(sp_frame, "H segmentation", cfg.std_patch, ["H_segment_method", "H_segment_otsu_n_levels", "H_segment_otsu_level", "H_segment_erode_steps", "H_segment_use_local_adaptive", "H_local_adaptive_smooth_iters", "apply_power_H_correct", "power_H_correct"], vars_map, ("segment", "std_patch"))
     sp_h.grid(row=r, column=0, sticky="ew", **_PADDING); r += 1

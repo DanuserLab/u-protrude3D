@@ -97,6 +97,79 @@ def iterative_tutte_cotangent_spherical_map(
     return U.copy(), n_inverted
 
 
+def _mesh_shrinkwrap_meniscus(basal_submesh, cfg):
+    """Mesh-based shrinkwrap with optional per-step meniscus constraint.
+
+    When cfg.mesh_sw_enable_hole_masking is True: bootstraps the hole distance
+    threshold from an initial 10-step wrap, then runs the full deformation with
+    that threshold passed to parametric_mesh_mesh_flow.  Vertices farther than
+    the threshold from the target receive zero force — membrane stiffness bridges
+    them naturally, mimicking the zero-gradient-at-holes behaviour of GVF.
+
+    When cfg.mesh_sw_enable_hole_masking is False (default): runs a single
+    standard shrinkwrap call with no hole masking.
+    """
+    _common = dict(
+        decay_rate=cfg.decay_rate,
+        remesh_iters=10,
+        min_size=cfg.mesh_sw_min_size,
+        min_lr=cfg.min_lr,
+        genus0_alpha_frac=cfg.mesh_sw_genus0_alpha_frac,
+        genus0_alpha_auto=cfg.mesh_sw_genus0_alpha_auto,
+        genus0_tol=1e-3,
+        deltaL=5e-4,
+        alpha=0.1,
+        beta=0.5,
+        solver='pardiso',
+        anchor_factor=cfg.mesh_sw_anchor_factor,
+        concavity_boost_factor=cfg.mesh_sw_concavity_boost,
+        force_sigma=cfg.mesh_sw_force_sigma,
+        convergence_sq_dist=cfg.mesh_sw_convergence_sq_dist,
+        topology_repair_alpha_frac=cfg.mesh_sw_topology_repair_alpha_frac,
+        vfc_sigma=cfg.mesh_sw_vfc_sigma,
+        vfc_blend=cfg.mesh_sw_vfc_blend,
+        smooth_iters=cfg.mesh_sw_smooth_iters,
+        balloon_factor=cfg.mesh_sw_balloon_factor,
+        debugviz=False,
+    )
+
+    if not cfg.mesh_sw_enable_hole_masking:
+        mesh_wrap, mesh_genus0, stats = meshtools.shrinkwrap_genus0_meshbased(
+            basal_submesh,
+            total_shrinkwrap_iters=cfg.total_shrinkwrap_iters,
+            enable_hole_masking=False,
+            hole_sq_dist_threshold=None,
+            **_common,
+        )
+        return mesh_wrap, mesh_genus0, stats
+
+    # Hole masking enabled: bootstrap threshold from a short initial run.
+    mesh_wrap_init, mesh_genus0, _ = meshtools.shrinkwrap_genus0_meshbased(
+        basal_submesh,
+        total_shrinkwrap_iters=10,
+        enable_hole_masking=False,
+        hole_sq_dist_threshold=None,
+        **_common,
+    )
+
+    if cfg.mesh_sw_hole_sq_dist_threshold is not None and cfg.mesh_sw_hole_sq_dist_threshold > 0:
+        hole_thresh = cfg.mesh_sw_hole_sq_dist_threshold
+    else:
+        mean_el = igl.avg_edge_length(
+            np.array(mesh_wrap_init.vertices), np.array(mesh_wrap_init.faces, dtype=np.int32))
+        hole_thresh = (cfg.mesh_sw_hole_edge_length_factor * mean_el) ** 2
+
+    mesh_wrap, _, stats = meshtools.shrinkwrap_genus0_meshbased(
+        basal_submesh,
+        total_shrinkwrap_iters=cfg.total_shrinkwrap_iters,
+        enable_hole_masking=True,
+        hole_sq_dist_threshold=hole_thresh,
+        **_common,
+    )
+
+    return mesh_wrap, mesh_genus0, stats
+
+
 def volumize_protrusions(
     mesh_path: str | os.PathLike,
     protrusion_labels: np.ndarray,
@@ -197,39 +270,52 @@ def volumize_protrusions(
     # 3. Shrinkwrap basal surface
     # ------------------------------------------------------------------
     basefname = Path(mesh_path).stem
-    mesh_shrinkwrap, _, mesh_genus0, iter_stats = meshtools.shrinkwrap_genus0_basic(
-        basal_submesh,
-        use_GVF=True,
-        GVF_mu=cfg.gvf_mu,
-        GVF_iterations=cfg.gvf_iters,
-        voxelize_padsize=cfg.voxelize_padsize,
-        voxelize_dilate_ksize=cfg.voxelize_dilate_ksize,
-        voxelize_erode_ksize=cfg.voxelize_erode_ksize,
-        extra_pad=cfg.extra_pad,
-        genus0_alpha_frac=0.2,
-        genus0_alpha_auto=False,
-        genus0_tol=1e-3,
-        total_shrinkwrap_iters=cfg.total_shrinkwrap_iters,
-        decay_rate=cfg.decay_rate,
-        remesh_iters=10,
-        conformalize=False,
-        min_size=10e3,
-        upsample=1,
-        min_lr=cfg.min_lr,
-        make_manifold=False,
-        watertight_fraction=0.1,
-        deltaL=5e-4,
-        alpha=0.1,
-        beta=0.5,
-        solver='pardiso',
-        curvature_weighting=False,
-        debugviz=False,
-    )
-    mesh_shrinkwrap = meshtools.largest_component_mesh(mesh_shrinkwrap)
+    if cfg.use_mesh_based_shrinkwrap:
+        mesh_shrinkwrap, mesh_genus0, iter_stats_raw = _mesh_shrinkwrap_meniscus(
+            basal_submesh, cfg)
+        chamfer_dists          = list(iter_stats_raw[0])
+        all_meshes_iter_genus0 = list(iter_stats_raw[1])
+        all_meshes_iter        = list(iter_stats_raw[2])
+        mesh_genus0.export(str(save_dir / 'initial_genus0_alphawrap.obj'))
+        meshtools.decimate_resample_mesh(mesh_genus0, remesh_samples=0.5).export(
+            str(save_dir / 'initial_genus0_alphawrap_remeshed.obj')
+        )
+    else:
+        mesh_shrinkwrap, _, mesh_genus0, iter_stats = meshtools.shrinkwrap_genus0_basic(
+            basal_submesh,
+            use_GVF=True,
+            GVF_mu=cfg.gvf_mu,
+            GVF_iterations=cfg.gvf_iters,
+            voxelize_padsize=cfg.voxelize_padsize,
+            voxelize_dilate_ksize=cfg.voxelize_dilate_ksize,
+            voxelize_erode_ksize=cfg.voxelize_erode_ksize,
+            extra_pad=cfg.extra_pad,
+            genus0_alpha_frac=0.2,
+            genus0_alpha_auto=False,
+            genus0_tol=1e-3,
+            total_shrinkwrap_iters=cfg.total_shrinkwrap_iters,
+            decay_rate=cfg.decay_rate,
+            remesh_iters=10,
+            conformalize=False,
+            min_size=10e3,
+            upsample=1,
+            min_lr=cfg.min_lr,
+            make_manifold=False,
+            watertight_fraction=0.1,
+            deltaL=5e-4,
+            alpha=0.1,
+            beta=0.5,
+            solver='pardiso',
+            curvature_weighting=False,
+            vfc_sigma=cfg.gvf_vfc_sigma,
+            vfc_blend=cfg.gvf_vfc_blend,
+            debugviz=False,
+        )
+        chamfer_dists          = iter_stats[0]
+        all_meshes_iter_genus0 = iter_stats[1]
+        all_meshes_iter        = iter_stats[2]
 
-    chamfer_dists = iter_stats[0]
-    all_meshes_iter_genus0 = iter_stats[1]
-    all_meshes_iter = iter_stats[2]
+    mesh_shrinkwrap = meshtools.largest_component_mesh(mesh_shrinkwrap)
 
     mesh_wrap = mesh_shrinkwrap.copy()
     for _ in range(cfg.n_punchout_refinements):
@@ -240,27 +326,67 @@ def volumize_protrusions(
             sigma_area_cutoff=2, nearest_k=1, dilate_voxels=2, erode_voxels=1, minsize=10,
         )
         mesh_wrap = meshtools.largest_component_mesh(mesh_wrap)
-        mesh_shrinkwrap, _, _, iter_stats2 = meshtools.attract_surface_mesh(
-            mesh_in=mesh_wrap, mesh_ref=basal_submesh,
-            use_GVF=True, GVF_mu=cfg.gvf_mu, GVF_iterations=cfg.gvf_iters,
-            voxelize_padsize=cfg.voxelize_padsize,
-            voxelize_dilate_ksize=cfg.voxelize_dilate_ksize,
-            voxelize_erode_ksize=cfg.voxelize_erode_ksize,
-            extra_pad=cfg.extra_pad,
-            tightest_genus0_initial=True,
-            genus0_alpha_frac=0.2, genus0_alpha_auto=False, genus0_tol=0.1,
-            total_shrinkwrap_iters=100, decay_rate=cfg.decay_rate, remesh_iters=10,
-            conformalize=False, min_size=10e3, upsample=1, min_lr=cfg.min_lr,
-            make_manifold=False, watertight_fraction=0.1,
-            deltaL=5e-4, alpha=0.1, beta=0.5, solver='pardiso',
-            curvature_weighting=False, debugviz=False,
-        )
-        mesh_shrinkwrap = meshtools.largest_component_mesh(mesh_shrinkwrap)
-        all_meshes_iter.append(iter_stats2[2])
-        all_meshes_iter_genus0.append(iter_stats2[1])
-        chamfer_dists.append(iter_stats2[0])
+        if cfg.use_mesh_based_shrinkwrap:
+            mesh_shrinkwrap, _, punch_stats = meshtools.shrinkwrap_genus0_meshbased(
+                mesh_in=mesh_wrap,
+                total_shrinkwrap_iters=100,
+                decay_rate=cfg.decay_rate,
+                remesh_iters=10,
+                min_size=10_000,
+                min_lr=cfg.min_lr,
+                genus0_alpha_frac=0.2,
+                genus0_alpha_auto=True,
+                genus0_tol=0.1,
+                deltaL=5e-4,
+                alpha=0.1,
+                beta=0.5,
+                solver='pardiso',
+                anchor_factor=cfg.mesh_sw_anchor_factor,
+                concavity_boost_factor=cfg.mesh_sw_concavity_boost,
+                force_sigma=cfg.mesh_sw_force_sigma,
+                convergence_sq_dist=cfg.mesh_sw_convergence_sq_dist,
+                topology_repair_alpha_frac=cfg.mesh_sw_topology_repair_alpha_frac,
+                vfc_sigma=cfg.mesh_sw_vfc_sigma,
+                vfc_blend=cfg.mesh_sw_vfc_blend,
+                smooth_iters=cfg.mesh_sw_smooth_iters,
+                balloon_factor=cfg.mesh_sw_balloon_factor,
+                debugviz=False,
+            )
+            mesh_shrinkwrap = meshtools.largest_component_mesh(mesh_shrinkwrap)
+            all_meshes_iter.extend(punch_stats[2])
+            all_meshes_iter_genus0.extend(punch_stats[1])
+            chamfer_dists.extend(punch_stats[0])
+        else:
+            mesh_shrinkwrap, _, _, iter_stats2 = meshtools.attract_surface_mesh(
+                mesh_in=mesh_wrap, mesh_ref=basal_submesh,
+                use_GVF=True, GVF_mu=cfg.gvf_mu, GVF_iterations=cfg.gvf_iters,
+                voxelize_padsize=cfg.voxelize_padsize,
+                voxelize_dilate_ksize=cfg.voxelize_dilate_ksize,
+                voxelize_erode_ksize=cfg.voxelize_erode_ksize,
+                extra_pad=cfg.extra_pad,
+                tightest_genus0_initial=True,
+                genus0_alpha_frac=0.2, genus0_alpha_auto=False, genus0_tol=0.1,
+                total_shrinkwrap_iters=100, decay_rate=cfg.decay_rate, remesh_iters=10,
+                conformalize=False, min_size=10e3, upsample=1, min_lr=cfg.min_lr,
+                make_manifold=False, watertight_fraction=0.1,
+                deltaL=5e-4, alpha=0.1, beta=0.5, solver='pardiso',
+                curvature_weighting=False,
+                vfc_sigma=cfg.gvf_vfc_sigma,
+                vfc_blend=cfg.gvf_vfc_blend,
+                debugviz=False,
+            )
+            mesh_shrinkwrap = meshtools.largest_component_mesh(mesh_shrinkwrap)
+            all_meshes_iter.append(iter_stats2[2])
+            all_meshes_iter_genus0.append(iter_stats2[1])
+            chamfer_dists.append(iter_stats2[0])
 
-    if cfg.n_punchout_refinements > 0:
+    # Flatten iteration lists: mesh-based path uses extend (already flat);
+    # GVF path uses append (nested after punchout rounds).
+    if cfg.use_mesh_based_shrinkwrap or cfg.n_punchout_refinements == 0:
+        all_meshes_iter_flat        = all_meshes_iter
+        all_meshes_iter_genus0_flat = all_meshes_iter_genus0
+        all_chamfer_dists           = np.array(chamfer_dists)
+    else:
         n = cfg.n_punchout_refinements
         all_meshes_iter_flat = all_meshes_iter[:-n] + [
             x for item in all_meshes_iter[-n:] for x in item
@@ -269,25 +395,25 @@ def volumize_protrusions(
             x for item in all_meshes_iter_genus0[-n:] for x in item
         ]
         all_chamfer_dists = np.hstack(chamfer_dists)
-    else:
-        all_meshes_iter_flat = all_meshes_iter
-        all_meshes_iter_genus0_flat = all_meshes_iter_genus0
-        all_chamfer_dists = chamfer_dists
 
     gauss_steps = np.array([
         np.nanmean(np.abs(igl.gaussian_curvature(m.vertices, m.faces)))
         for m in all_meshes_iter_flat
     ])
 
-    # Pick mesh minimising combined loss
-    all_chamfer_norm = (all_chamfer_dists - all_chamfer_dists.min()) / (
-        all_chamfer_dists.max() - all_chamfer_dists.min() + 1e-20
-    )
-    gauss_norm = (gauss_steps - gauss_steps.min()) / (
-        gauss_steps.max() - gauss_steps.min() + 1e-20
-    )
-    loss = 0.5 * all_chamfer_norm + 0.5 * gauss_norm
-    final_mesh = meshtools.largest_component_mesh(all_meshes_iter_flat[np.argmin(loss)])
+    # Pick the final shrinkwrap mesh from the iteration sequence.
+    if cfg.shrinkwrap_iter_select == 'min_loss':
+        all_chamfer_norm = (all_chamfer_dists - all_chamfer_dists.min()) / (
+            all_chamfer_dists.max() - all_chamfer_dists.min() + 1e-20
+        )
+        gauss_norm = (gauss_steps - gauss_steps.min()) / (
+            gauss_steps.max() - gauss_steps.min() + 1e-20
+        )
+        loss = 0.5 * all_chamfer_norm + 0.5 * gauss_norm
+        selected_idx = int(np.argmin(loss))
+    else:  # 'last'
+        selected_idx = len(all_meshes_iter_flat) - 1
+    final_mesh = meshtools.largest_component_mesh(all_meshes_iter_flat[selected_idx])
     final_mesh.export(str(save_dir / 'min_loss_mesh_ds.obj'))
 
     mesh_shrinkwrap = meshtools.incremental_isotropic_remesh(final_mesh)

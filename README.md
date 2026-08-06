@@ -29,6 +29,8 @@ u_protrude3d.warmup()
 
 ## Quick-start
 
+Use the script in `example_scripts` folder which performs the detection, benchmarking and voxelization decomposition on synthetic generated cell surface mesh to quickly get started. Further example real segmented cell meshes for testing are provided in the `example_data` folder. Note: only the synthetic cell surfaces have ground truth vertex labels and should be run with benchmarking script. Detection and voxelization does not require ground truth labels. 
+
 ```python
 import u_protrude3d as up3d
 

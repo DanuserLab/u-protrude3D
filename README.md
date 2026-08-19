@@ -1,5 +1,5 @@
 # u-Protrude3D
-
+## Library for 3D Surface Motif Parsing and Basal Cortex Reconstruction
 <p align="center">
   <img src="docs/imgs/summary_figure.png" width="800"/>
 </p>
@@ -7,6 +7,16 @@
 **3D cell protrusion segmentation, benchmarking, and volumization for fluorescence microscopy derived meshes.**
 
 `u-Protrude3D` takes a triangulated cell surface mesh and automatically detects, and labels individual protrusions (e.g. blebs, filopodia, microvilli, lamellipodia) by inferring an optimal basal reference surface. It can optionally benchmark predictions against ground-truth labels and volumize surface labels into 3-D voxel volumes. The latter effectively decomposes the cell volume = protrusion volumes + basal volume.    
+
+An associated academic paper is forthcoming. 
+
+[![PyPI version](https://badge.fury.io/py/u-Protrude3D.svg)](https://badge.fury.io/py/u-Protrude3D)
+[![Downloads](https://pepy.tech/badge/u-Protrude3D)](https://pepy.tech/project/u-Protrude3D)
+[![Downloads](https://pepy.tech/badge/u-Protrude3D/month)](https://pepy.tech/project/u-Protrude3D)
+[![Python version](https://img.shields.io/pypi/pyversions/u-Protrude3D)](https://pypistats.org/packages/u-Protrude3D)
+[![GitHub stars](https://img.shields.io/github/stars/DanuserLab/u-Protrude3D?style=social)](https://github.com/DanuserLab/u-Protrude3D/)
+[![GitHub forks](https://img.shields.io/github/forks/DanuserLab/u-Protrude3D?style=social)](https://github.com/DanuserLab/u-Protrude3D/)
+[![Licence: GPL v3](https://img.shields.io/github/license/DanuserLab/u-Protrude3D)](https://github.com/DanuserLab/u-Protrude3D/blob/master/LICENSE)
 
 ---
 

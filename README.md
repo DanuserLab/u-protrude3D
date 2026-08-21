@@ -18,6 +18,18 @@ An associated academic paper is forthcoming.
 [![GitHub forks](https://img.shields.io/github/forks/DanuserLab/u-Protrude3D?style=social)](https://github.com/DanuserLab/u-Protrude3D/)
 [![Licence: GPL v3](https://img.shields.io/github/license/DanuserLab/u-Protrude3D)](https://github.com/DanuserLab/u-Protrude3D/blob/master/LICENSE)
 
+- [Installation](#installation)
+- [Quick-start](#quick-start)
+- [Segment protrusions (scale-invariant, recommended)](#segment-protrusions-scale-invariant-recommended)
+- [Segment protrusions (curvature-based, classic)](#segment-protrusions-curvature-based-classic)
+- [Benchmark segmentation](#benchmark-segmentation)
+- [Volumize protrusions](#volumize-protrusions)
+- [Interactive GUI](#interactive-gui)
+- [Parameter reference](#parameter-reference)
+- [Tips and common adjustments](#tips-and-common-adjustments)
+- [Questions and Issues](#questions-and-issues)
+- [Danuser Lab Links](#danuser-lab-links)
+
 ---
 
 ## Installation
@@ -40,6 +52,8 @@ u_protrude3d.warmup()
 ## Quick-start
 
 Use the script in `example_scripts` folder which performs the detection, benchmarking and voxelization decomposition on synthetic generated cell surface mesh to quickly get started. Further example real segmented cell meshes for testing are provided in the `example_data` folder. Note: only the synthetic cell surfaces have ground truth vertex labels and should be run with benchmarking script. Detection and voxelization does not require ground truth labels. 
+
+**NOTE:** One of the example scripts specifically targets the segmentation of synthetic long, thin filopodia showing how to adapt the mean curvature flow to overcome deformation singularities that otherwise underestimates the filopodia height, causing missed detection of visually prominent filopodia
 
 ```python
 import u_protrude3d as up3d
@@ -658,3 +672,17 @@ for mesh_path in sorted(glob.glob("data/*.obj")):
     )
     print(f"{name}: {result.vertex_labels.max()} protrusions found")
 ```
+
+---
+
+## Questions and Issues
+
+Feel free to open a [GitHub issue](https://github.com/DanuserLab/u-Protrude3D/issues) or email [felix.y.zhou@vanderbilt.edu](mailto:felix.y.zhou@vanderbilt.edu).
+
+---
+
+## Danuser Lab Links
+
+- [Danuser Lab website](https://www.danuserlab-utsw.org/)
+- [u-Unwrap3D](https://github.com/DanuserLab/u-unwrap3D) — companion library for 3D surface parameterization and topographic mapping
+- [Software releases](https://github.com/DanuserLab)

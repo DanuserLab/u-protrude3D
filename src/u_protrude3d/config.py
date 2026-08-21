@@ -17,6 +17,11 @@ class cMCFConfig:
     deltaL: float = 5e-4
     mollify_factor: float = 1e-5
     solver: str = 'pardiso'
+    # Gaussian smoothing applied to the binary mask before SDF computation.
+    # Larger values produce a smoother SDF normal field (less noisy cMCF force).
+    sdf_smooth: float = 1.0
+    # Gaussian smoothing applied to the SDF gradient field after computation.
+    sdf_smooth_gradient: float = 1.0
     # Erosion-only variant: drive the flow only where curvature exceeds an
     # auto-discovered basal level (protrusions erode, basal is preserved).
     erosion_only: bool = False
@@ -36,6 +41,14 @@ class InitialHeightConfig:
     otsu_level: int = -1
     prop_iters: int = 1
     prop_rebinarize: float = 0.25
+    # Absolute minimum height a vertex must exceed to be considered protrusive,
+    # applied on top of the auto threshold.  Default 0 (no extra filter).
+    min_height_threshold: float = 0.0
+    # Local-adaptive binarization: subtract a Laplacian-smoothed baseline from
+    # the height field before thresholding so that local protrusions are detected
+    # relative to their neighbourhood rather than the global mean.
+    use_local_adaptive: bool = False
+    local_adaptive_smooth_iters: int = 50
 
 
 @dataclass
@@ -81,6 +94,10 @@ class InvariantConfig:
     si_segment_otsu_n_levels: int = 2
     si_segment_otsu_level: int = -1
     n_diffusion_iters: int = 5
+    # Local-adaptive SI thresholding within each patch: subtract a Laplacian-smoothed
+    # SI baseline before thresholding so dome tips are detected relative to local background.
+    si_use_local_adaptive: bool = False
+    si_local_adaptive_smooth_iters: int = 50
     # Seeding strategy: None → SI binarisation; 'height'/'shape_index' → geodesic watershed
     watershed_seeding: Optional[Literal['height', 'shape_index']] = None
     ws_min_peak_dist: int = 3              # min 1-ring hops between kept peaks

@@ -230,23 +230,72 @@ def volumize_protrusions(
     mesh = load_mesh(mesh_path)
 
     # ------------------------------------------------------------------
-    # 2. Build basal sub-mesh (remove protrusion faces with 1-ring erosion)
+    # Zero-protrusion short-circuit: all labels are 0 → no protrusions
+    # to volumize.  Voxelise the cell and return a zero label volume with
+    # cell_binary == basal_binary.
     # ------------------------------------------------------------------
+    if np.all(protrusion_labels == 0):
+        print('[volumize_protrusions] All protrusion labels are zero — skipping shrinkwrap/advection.')
+        import skimage.morphology as skmorph
+        voxel_size = cfg.voxel_size
+        vertices = np.array(mesh.vertices)
+        v_min = vertices.min(axis=0)
+        v_max = vertices.max(axis=0)
+        pad = 4
+        shape = tuple(
+            int(np.ceil((v_max[i] - v_min[i]) / voxel_size)) + 2 * pad
+            for i in range(3)
+        )
+        # Rasterise mesh surface into a binary volume
+        import skimage.draw as skdraw
+        cell_binary = np.zeros(shape, dtype=np.uint8)
+        from unwrap3D.Segmentation import segmentation as unwrap3D_segmentation
+        cell_binary = unwrap3D_segmentation.mesh_to_binary(
+            mesh, voxel_size=voxel_size, pad=pad
+        ) if hasattr(unwrap3D_segmentation, 'mesh_to_binary') else cell_binary
+
+        volume_labels = np.zeros(shape, dtype=np.uint16)
+        import skimage.io as skio_local
+        skio_local.imsave(str(save_dir / 'volumize_cell_binary.tif'),
+                          np.uint8(255 * (cell_binary > 0)))
+        skio_local.imsave(str(save_dir / 'volumize_basal_cell_binary.tif'),
+                          np.uint8(255 * (cell_binary > 0)))
+        skio_local.imsave(str(save_dir / 'volumize_protrusion_cell_labels.tif'), volume_labels)
+        out_paths = {
+            'cell_binary_tif':        save_dir / 'volumize_cell_binary.tif',
+            'basal_binary_tif':       save_dir / 'volumize_basal_cell_binary.tif',
+            'protrusion_labels_tif':  save_dir / 'volumize_protrusion_cell_labels.tif',
+        }
+        return VolumeResult(
+            volume_labels=volume_labels,
+            cell_binary=cell_binary,
+            basal_binary=cell_binary,   # identical to cell binary when no protrusions
+            surface_labels=protrusion_labels + 1,
+            output_paths={k: str(v) for k, v in out_paths.items()},
+        )
+
+    # ------------------------------------------------------------------
+    # 2. Build basal sub-mesh (remove protrusion faces with k-ring erosion)
+    # ------------------------------------------------------------------
+    protrusion_labels_shrink = protrusion_labels.copy()
+    for _ in range(max(1, cfg.label_erosion_rings)):
+        _lf = spstats.mode(protrusion_labels_shrink[mesh.faces] * 1, axis=-1)[0]
+        if len(_lf.shape) == 2:
+            _lf = _lf[:, 0]
+        _bverts = []
+        for cc in np.setdiff1d(np.unique(protrusion_labels_shrink), 0):
+            b_loop = igl.boundary_loop(mesh.faces[_lf == cc])
+            if len(b_loop) > 0:
+                _bverts.append(b_loop)
+        if not _bverts:
+            break
+        protrusion_labels_shrink[np.hstack(_bverts)] = 0
+
     protrusion_labels_faces = spstats.mode(
-        protrusion_labels[mesh.faces] * 1, axis=-1
+        protrusion_labels_shrink[mesh.faces] * 1, axis=-1
     )[0]
     if len(protrusion_labels_faces.shape) == 2:
         protrusion_labels_faces = protrusion_labels_faces[:, 0]
-
-    # Erode labels by one ring at the boundary
-    protrusion_labels_shrink = protrusion_labels.copy()
-    vertex_set_0 = []
-    for cc in np.setdiff1d(np.unique(protrusion_labels), 0):
-        b_loop = igl.boundary_loop(mesh.faces[protrusion_labels_faces == cc])
-        if len(b_loop) > 0:
-            vertex_set_0.append(b_loop)
-    if vertex_set_0:
-        protrusion_labels_shrink[np.hstack(vertex_set_0)] = 0
 
     # Offset labels (0 → background, 1 → basal, 2..K+1 → protrusions)
     protrusion_labels_shrink = protrusion_labels_shrink + 1

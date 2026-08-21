@@ -121,6 +121,60 @@ def _local_height_maxima(vertices, faces, height, min_hops=3, eps=0.0):
     return np.array(kept, dtype=int)
 
 
+def _fill_label_interior_holes(mesh, labels):
+    """Flood-fill unlabelled (0) vertices that are topologically enclosed by a single label.
+
+    After SI-based label spreading an annular seed can leave a label-0 hole in
+    the centre of a patch.  For each connected component of label-0 vertices on
+    the submesh, if every labelled neighbour across the component boundary belongs
+    to exactly one label, the component is interior to that label and is filled.
+
+    Parameters
+    ----------
+    mesh   : trimesh.Trimesh  (the patch submesh)
+    labels : (N,) int array   (per-vertex labels; 0 = unlabelled)
+
+    Returns
+    -------
+    labels : (N,) int array, modified in place
+    """
+    from collections import deque
+
+    n = len(mesh.vertices)
+    # Build vertex adjacency from faces
+    adj = [set() for _ in range(n)]
+    for f in mesh.faces:
+        for i in range(3):
+            adj[f[i]].add(f[(i + 1) % 3])
+            adj[f[i]].add(f[(i + 2) % 3])
+
+    visited = np.zeros(n, dtype=bool)
+    for start in range(n):
+        if labels[start] != 0 or visited[start]:
+            continue
+        # BFS over label-0 vertices
+        component = []
+        queue = deque([start])
+        visited[start] = True
+        boundary_labels = set()
+        while queue:
+            v = queue.popleft()
+            component.append(v)
+            for nb in adj[v]:
+                if labels[nb] == 0:
+                    if not visited[nb]:
+                        visited[nb] = True
+                        queue.append(nb)
+                else:
+                    boundary_labels.add(labels[nb])
+        # Fill only if enclosed by exactly one label
+        if len(boundary_labels) == 1:
+            fill_label = next(iter(boundary_labels))
+            for v in component:
+                labels[v] = fill_label
+    return labels
+
+
 def _invariant_saddle_merge(protrude_submesh, submesh_labels, vertex_height,
                              height_scale, saddle_depth_threshold, max_iters=20,
                              vertex_si=None, saddle_criterion='height',
@@ -297,6 +351,8 @@ def _invariant_process_patch(
     ws_saddle_depth_threshold=0.2,
     ws_saddle_si_threshold=0.5,
     ws_saddle_ar_threshold=2.0,
+    si_use_local_adaptive=False,
+    si_local_adaptive_smooth_iters=50,
 ):
     """Label a single patch using shape-index binarisation + label spreading.
 
@@ -363,7 +419,14 @@ def _invariant_process_patch(
 
     def _si_ccs():
         """Shared helper: find SI-threshold CCs on the submesh."""
-        si_face = np.mean(vertex_si[protrude_submesh.faces], axis=1)
+        si_work = vertex_si.copy()
+        if si_use_local_adaptive:
+            smooth_si = mesh_smooth_scalar(
+                protrude_submesh, si_work, delta=0.5,
+                n_iters=si_local_adaptive_smooth_iters,
+            )
+            si_work = si_work - smooth_si
+        si_face = np.mean(si_work[protrude_submesh.faces], axis=1)
         high_si_mask, _ = binary_threshold(si_face, method=si_method,
                                             n_otsu_levels=si_otsu_n_levels, level=si_otsu_level)
         high_si_faces = np.where(high_si_mask)[0]
@@ -440,6 +503,9 @@ def _invariant_process_patch(
                 return_proba=False, renorm=False,
             )
             submesh_labels = np.asarray(submesh_labels, dtype=np.int32)
+
+    # --- Fill any unlabelled interior holes enclosed by a single label ---
+    submesh_labels = _fill_label_interior_holes(protrude_submesh, np.asarray(submesh_labels, dtype=np.int32))
 
     # --- Universal saddle merge (all paths) ---
     if ws_saddle_merge and vertex_h is not None and len(np.unique(submesh_labels)) > 2:
@@ -544,7 +610,8 @@ def segment_protrusions_invariant(
     )
 
     H_normal, sdf_vol_normal, sdf_vol = segmentation.mean_curvature_binary(
-        mesh_binary > 0, smooth=1.0, mask=False, smooth_gradient=1, eps=1e-12
+        mesh_binary > 0, smooth=cfg.cmcf.sdf_smooth, mask=False,
+        smooth_gradient=cfg.cmcf.sdf_smooth_gradient, eps=1e-12,
     )
 
     w_curv = meshtools._normalize99(H_normal)
@@ -622,6 +689,7 @@ def segment_protrusions_invariant(
 
     ref_mesh = mesh.copy()
     ref_mesh.vertices = Usteps[..., ind].copy()
+    ref_mesh.export(str(d / 'inv_reference_mesh.obj'))
     interior_bool = mesh_binary[
         ref_mesh.vertices[:, 0].astype(int),
         ref_mesh.vertices[:, 1].astype(int),
@@ -741,7 +809,16 @@ def segment_protrusions_invariant(
     else:
         threshold = icfg.manual_threshold
 
-    binary_dists = dists >= threshold
+    if icfg.use_local_adaptive:
+        smooth_dists = mesh_smooth_scalar(
+            mesh, dists, delta=0.5, n_iters=icfg.local_adaptive_smooth_iters,
+        )
+        dists_thresh = dists - smooth_dists
+        binary_dists = dists_thresh >= threshold
+    else:
+        binary_dists = dists >= threshold
+    if icfg.min_height_threshold > 0:
+        binary_dists = binary_dists & (dists >= icfg.min_height_threshold)
 
     W_geom = meshtools.vertex_geometric_affinity_matrix(
         mesh, gamma=None, eps=1e-12, alpha=0.5, normalize=True
@@ -793,6 +870,62 @@ def segment_protrusions_invariant(
     # ------------------------------------------------------------------
     # 10. Per-patch labelling using shape index
     # ------------------------------------------------------------------
+    if len(protrusion_cc_labels) == 0:
+        # No protrusions detected (e.g. min_height_threshold too high).
+        # Skip all patch processing; return zero labels with visualizations.
+        print('[segment_protrusions_invariant] No protrusion patches detected — returning zero labels.')
+        global_vertex_labels = np.zeros(len(mesh.vertices), dtype=np.uint32)
+        cc_vertex_labels      = np.zeros(len(mesh.vertices), dtype=np.uint32)
+        basal_binary          = np.zeros(len(mesh.vertices), dtype=bool)
+        export_colored_obj(mesh, _binary_colors(basal_binary), d / 'inv_basal_binary.obj')
+        export_colored_obj(mesh, get_vertex_colors(global_vertex_labels, palette=protrude_colors),
+                           d / 'inv_final_labels.obj')
+        _plot_patch_areas(np.array([]), 0.0, d / 'initial_patch_areas.svg')
+        spio.savemat(
+            str(d / 'instance_protrusion_segmentation_stats.mat'),
+            {'protrusion_labels': global_vertex_labels,
+             'protrusion_labels_initial_cc': cc_vertex_labels,
+             'external_cMCF_steps': Usteps.astype(np.float32),
+             'basal_binary': np.asarray(basal_binary),
+             'protrusion_dists': dists,
+             'protrusion_H_mean': H_mean,
+             'protrusion_H_gauss': H_gauss,
+             'cMCF_stop_ind': ind},
+        )
+        out_paths = {
+            'height_obj':          d / 'inv_height.obj',
+            'shape_index_obj':     d / 'inv_shape_index.obj',
+            'curvedness_norm_obj': d / 'inv_curvedness_norm.obj',
+            'ridgeness_norm_obj':  d / 'inv_ridgeness_norm.obj',
+            'H_mean_norm_obj':     d / 'inv_H_mean_norm.obj',
+            'K_norm_obj':          d / 'inv_K_norm.obj',
+            'curv_anisotropy_obj': d / 'inv_curv_anisotropy.obj',
+            'principal_ratio_obj': d / 'inv_principal_ratio.obj',
+            'valleys_norm_obj':    d / 'inv_valleys_norm.obj',
+            'height_binary_obj':   d / 'inv_height_binary.obj',
+            'initial_cc_obj':      d / 'inv_initial_cc_labels.obj',
+            'basal_binary_obj':    d / 'inv_basal_binary.obj',
+            'final_labels_obj':    d / 'inv_final_labels.obj',
+            'raw_stats_mat':       d / 'raw_surface_stats.mat',
+            'smooth_stats_mat':    d / 'smooth_surface_stats.mat',
+            'instance_stats_mat':  d / 'instance_protrusion_segmentation_stats.mat',
+            'patch_area_plot_svg': d / 'initial_patch_areas.svg',
+            'cMCF_plot_svg':       d / 'external_MCF_iteration_determination.svg',
+        }
+        return InvariantResult(
+            vertex_labels=global_vertex_labels,
+            vertex_labels_cc=cc_vertex_labels,
+            basal_binary=np.asarray(basal_binary),
+            mesh_V=mesh.vertices, mesh_F=mesh.faces,
+            total_surface_area=A,
+            height=dists, shape_index=shape_index,
+            curvedness_norm=curvedness_norm, ridgeness_norm=ridgeness_norm,
+            H_mean_norm=H_mean_norm, K_norm=K_norm,
+            curv_anisotropy=curv_anisotropy, principal_ratio=principal_ratio,
+            valleys_norm=valleys_norm,
+            output_paths={k: str(v) for k, v in out_paths.items()},
+        )
+
     # Two-pass: large patches are first split into SI-based sub-regions
     # (analogous to _split_large_patch but using SI instead of H).
     # All patches (original std + sub-patches) are then processed by the
@@ -853,6 +986,8 @@ def segment_protrusions_invariant(
             ws_saddle_depth_threshold=icfg_inv.ws_saddle_depth_threshold,
             ws_saddle_si_threshold=icfg_inv.ws_saddle_si_threshold,
             ws_saddle_ar_threshold=icfg_inv.ws_saddle_ar_threshold,
+            si_use_local_adaptive=icfg_inv.si_use_local_adaptive,
+            si_local_adaptive_smooth_iters=icfg_inv.si_local_adaptive_smooth_iters,
         )
 
     # ------------------------------------------------------------------
@@ -899,6 +1034,7 @@ def segment_protrusions_invariant(
     )
     global_vertex_labels = protrusion_labels_final * basal_binary
     global_vertex_labels = remove_small_label_components(mesh, global_vertex_labels, min_size=5)
+    global_vertex_labels = _fill_label_interior_holes(mesh, np.asarray(global_vertex_labels, dtype=np.int32))
 
     # ------------------------------------------------------------------
     # 12. Export final coloured mesh
@@ -1095,7 +1231,8 @@ def segment_protrusions(
     )
 
     H_normal, sdf_vol_normal, sdf_vol = segmentation.mean_curvature_binary(
-        mesh_binary > 0, smooth=1.0, mask=False, smooth_gradient=1, eps=1e-12
+        mesh_binary > 0, smooth=cfg.cmcf.sdf_smooth, mask=False,
+        smooth_gradient=cfg.cmcf.sdf_smooth_gradient, eps=1e-12,
     )
 
     w_curv = meshtools._normalize99(H_normal)
@@ -1238,7 +1375,14 @@ def segment_protrusions(
     else:
         threshold = icfg.manual_threshold
 
-    binary_dists = dists >= threshold
+    if icfg.use_local_adaptive:
+        smooth_dists = mesh_smooth_scalar(
+            mesh, dists, delta=0.5, n_iters=icfg.local_adaptive_smooth_iters,
+        )
+        dists_thresh = dists - smooth_dists
+        binary_dists = dists_thresh >= threshold
+    else:
+        binary_dists = dists >= threshold
 
     # Propagate binary label
     W_geom = meshtools.vertex_geometric_affinity_matrix(

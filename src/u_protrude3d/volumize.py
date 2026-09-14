@@ -116,11 +116,11 @@ def _mesh_shrinkwrap_meniscus(basal_submesh, cfg):
         min_lr=cfg.min_lr,
         genus0_alpha_frac=cfg.mesh_sw_genus0_alpha_frac,
         genus0_alpha_auto=cfg.mesh_sw_genus0_alpha_auto,
-        genus0_tol=1e-3,
-        deltaL=5e-4,
-        alpha=0.1,
-        beta=0.5,
-        solver='pardiso',
+        genus0_tol=cfg.mesh_sw_genus0_tol,
+        deltaL=cfg.mesh_sw_deltaL,
+        alpha=cfg.mesh_sw_alpha,
+        beta=cfg.mesh_sw_beta,
+        solver=cfg.mesh_sw_solver,
         anchor_factor=cfg.mesh_sw_anchor_factor,
         concavity_boost_factor=cfg.mesh_sw_concavity_boost,
         force_sigma=cfg.mesh_sw_force_sigma,
@@ -339,23 +339,23 @@ def volumize_protrusions(
             voxelize_dilate_ksize=cfg.voxelize_dilate_ksize,
             voxelize_erode_ksize=cfg.voxelize_erode_ksize,
             extra_pad=cfg.extra_pad,
-            genus0_alpha_frac=0.2,
-            genus0_alpha_auto=False,
-            genus0_tol=1e-3,
+            genus0_alpha_frac=cfg.gvf_sw_genus0_alpha_frac,
+            genus0_alpha_auto=cfg.gvf_sw_genus0_alpha_auto,
+            genus0_tol=cfg.gvf_sw_genus0_tol,
             total_shrinkwrap_iters=cfg.total_shrinkwrap_iters,
             decay_rate=cfg.decay_rate,
             remesh_iters=10,
-            conformalize=False,
-            min_size=10e3,
-            upsample=1,
+            conformalize=cfg.gvf_sw_conformalize,
+            min_size=cfg.gvf_sw_min_size,
+            upsample=cfg.gvf_sw_upsample,
             min_lr=cfg.min_lr,
-            make_manifold=False,
-            watertight_fraction=0.1,
-            deltaL=5e-4,
-            alpha=0.1,
-            beta=0.5,
-            solver='pardiso',
-            curvature_weighting=False,
+            make_manifold=cfg.gvf_sw_make_manifold,
+            watertight_fraction=cfg.gvf_sw_watertight_fraction,
+            deltaL=cfg.gvf_sw_deltaL,
+            alpha=cfg.gvf_sw_alpha,
+            beta=cfg.gvf_sw_beta,
+            solver=cfg.gvf_sw_solver,
+            curvature_weighting=cfg.gvf_sw_curvature_weighting,
             vfc_sigma=cfg.gvf_vfc_sigma,
             vfc_blend=cfg.gvf_vfc_blend,
             debugviz=False,
@@ -378,18 +378,18 @@ def volumize_protrusions(
         if cfg.use_mesh_based_shrinkwrap:
             mesh_shrinkwrap, _, punch_stats = meshtools.shrinkwrap_genus0_meshbased(
                 mesh_in=mesh_wrap,
-                total_shrinkwrap_iters=100,
+                total_shrinkwrap_iters=cfg.mesh_sw_punchout_total_iters,
                 decay_rate=cfg.decay_rate,
                 remesh_iters=10,
-                min_size=10_000,
+                min_size=cfg.mesh_sw_min_size,
                 min_lr=cfg.min_lr,
-                genus0_alpha_frac=0.2,
-                genus0_alpha_auto=True,
-                genus0_tol=0.1,
-                deltaL=5e-4,
-                alpha=0.1,
-                beta=0.5,
-                solver='pardiso',
+                genus0_alpha_frac=cfg.mesh_sw_punchout_genus0_alpha_frac,
+                genus0_alpha_auto=cfg.mesh_sw_punchout_genus0_alpha_auto,
+                genus0_tol=cfg.mesh_sw_punchout_genus0_tol,
+                deltaL=cfg.mesh_sw_deltaL,
+                alpha=cfg.mesh_sw_alpha,
+                beta=cfg.mesh_sw_beta,
+                solver=cfg.mesh_sw_solver,
                 anchor_factor=cfg.mesh_sw_anchor_factor,
                 concavity_boost_factor=cfg.mesh_sw_concavity_boost,
                 force_sigma=cfg.mesh_sw_force_sigma,
@@ -414,12 +414,18 @@ def volumize_protrusions(
                 voxelize_erode_ksize=cfg.voxelize_erode_ksize,
                 extra_pad=cfg.extra_pad,
                 tightest_genus0_initial=True,
-                genus0_alpha_frac=0.2, genus0_alpha_auto=False, genus0_tol=0.1,
-                total_shrinkwrap_iters=100, decay_rate=cfg.decay_rate, remesh_iters=10,
-                conformalize=False, min_size=10e3, upsample=1, min_lr=cfg.min_lr,
-                make_manifold=False, watertight_fraction=0.1,
-                deltaL=5e-4, alpha=0.1, beta=0.5, solver='pardiso',
-                curvature_weighting=False,
+                genus0_alpha_frac=cfg.gvf_sw_genus0_alpha_frac,
+                genus0_alpha_auto=cfg.gvf_sw_genus0_alpha_auto,
+                genus0_tol=cfg.gvf_sw_punchout_genus0_tol,
+                total_shrinkwrap_iters=cfg.gvf_sw_punchout_total_iters,
+                decay_rate=cfg.decay_rate, remesh_iters=10,
+                conformalize=cfg.gvf_sw_conformalize, min_size=cfg.gvf_sw_min_size,
+                upsample=cfg.gvf_sw_upsample, min_lr=cfg.min_lr,
+                make_manifold=cfg.gvf_sw_make_manifold,
+                watertight_fraction=cfg.gvf_sw_watertight_fraction,
+                deltaL=cfg.gvf_sw_deltaL, alpha=cfg.gvf_sw_alpha, beta=cfg.gvf_sw_beta,
+                solver=cfg.gvf_sw_solver,
+                curvature_weighting=cfg.gvf_sw_curvature_weighting,
                 vfc_sigma=cfg.gvf_vfc_sigma,
                 vfc_blend=cfg.gvf_vfc_blend,
                 debugviz=False,
@@ -450,20 +456,35 @@ def volumize_protrusions(
         for m in all_meshes_iter_flat
     ])
 
-    # Pick the final shrinkwrap mesh from the iteration sequence.
+    # Loss used to pick the final shrinkwrap mesh from the iteration sequence
+    # (always computed, regardless of shrinkwrap_iter_select, so it can be plotted).
+    all_chamfer_norm = (all_chamfer_dists - all_chamfer_dists.min()) / (
+        all_chamfer_dists.max() - all_chamfer_dists.min() + 1e-20
+    )
+    gauss_norm = (gauss_steps - gauss_steps.min()) / (
+        gauss_steps.max() - gauss_steps.min() + 1e-20
+    )
+    loss = 0.5 * all_chamfer_norm + 0.5 * gauss_norm
+
     if cfg.shrinkwrap_iter_select == 'min_loss':
-        all_chamfer_norm = (all_chamfer_dists - all_chamfer_dists.min()) / (
-            all_chamfer_dists.max() - all_chamfer_dists.min() + 1e-20
-        )
-        gauss_norm = (gauss_steps - gauss_steps.min()) / (
-            gauss_steps.max() - gauss_steps.min() + 1e-20
-        )
-        loss = 0.5 * all_chamfer_norm + 0.5 * gauss_norm
         selected_idx = int(np.argmin(loss))
     else:  # 'last'
         selected_idx = len(all_meshes_iter_flat) - 1
     final_mesh = meshtools.largest_component_mesh(all_meshes_iter_flat[selected_idx])
     final_mesh.export(str(save_dir / 'min_loss_mesh_ds.obj'))
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(all_chamfer_norm, label='chamfer (norm)')
+    ax.plot(gauss_norm, label='Gauss curvature (norm)')
+    ax.plot(loss, label='combined loss', linewidth=2)
+    ax.axvline(selected_idx, color='k', linestyle='--', label='selected')
+    ax.set_xlabel('shrinkwrap iteration')
+    ax.set_ylabel('loss')
+    ax.set_title(f"shrinkwrap_iter_select='{cfg.shrinkwrap_iter_select}'")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(str(save_dir / 'shrinkwrap_loss.png'))
+    plt.close(fig)
 
     mesh_shrinkwrap = meshtools.incremental_isotropic_remesh(final_mesh)
     mesh_shrinkwrap.export(str(save_dir / 'no_protrusion_mesh_shrinkwrap_ds.obj'))
@@ -556,6 +577,7 @@ def volumize_protrusions(
         'protrusion_labels_tif': save_dir / 'volumize_protrusion_cell_labels.tif',
         'color_tif': save_dir / 'protrusions_prop_color.tif',
         'shrinkwrap_obj': save_dir / 'no_protrusion_mesh_shrinkwrap_ds.obj',
+        'shrinkwrap_loss_plot': save_dir / 'shrinkwrap_loss.png',
     }
 
     return VolumeResult(

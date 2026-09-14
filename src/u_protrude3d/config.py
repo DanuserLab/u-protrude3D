@@ -236,6 +236,23 @@ class VolumeConfig:
     gvf_iters: int = 15
     gvf_vfc_sigma: float = 0.0   # VFC sigma for GVF path; 0 = disabled (pure GVF)
     gvf_vfc_blend: float = 1.0   # blend weight: 0 = pure VFC, 1 = pure GVF
+    # GVF shrinkwrap loop parameters (shrinkwrap_genus0_basic / attract_surface_mesh)
+    gvf_sw_genus0_alpha_frac: float = 0.2
+    gvf_sw_genus0_alpha_auto: bool = False
+    gvf_sw_genus0_tol: float = 1e-3
+    gvf_sw_conformalize: bool = False
+    gvf_sw_min_size: float = 10e3
+    gvf_sw_upsample: int = 1
+    gvf_sw_make_manifold: bool = False
+    gvf_sw_watertight_fraction: float = 0.1
+    gvf_sw_deltaL: float = 5e-4
+    gvf_sw_alpha: float = 0.1
+    gvf_sw_beta: float = 0.5
+    gvf_sw_solver: str = 'pardiso'
+    gvf_sw_curvature_weighting: bool = False
+    # GVF punchout-refinement overrides (attract_surface_mesh)
+    gvf_sw_punchout_total_iters: int = 100
+    gvf_sw_punchout_genus0_tol: float = 0.1
     total_shrinkwrap_iters: int = 100
     # Mesh-based shrinkwrap (alternative to GVF — no voxelization required)
     use_mesh_based_shrinkwrap: bool = False
@@ -254,6 +271,16 @@ class VolumeConfig:
     mesh_sw_vfc_blend: float = 0.5        # 0 = pure direct force, 1 = pure VFC
     mesh_sw_smooth_iters: int = 0         # post-force Laplacian smooth iters (0 = off)
     mesh_sw_balloon_factor: float = 0.0   # outward balloon force (0 = off)
+    mesh_sw_genus0_tol: float = 1e-3
+    mesh_sw_deltaL: float = 5e-4
+    mesh_sw_alpha: float = 0.1
+    mesh_sw_beta: float = 0.5
+    mesh_sw_solver: str = 'pardiso'
+    # Mesh-based punchout-refinement overrides (shrinkwrap_genus0_meshbased)
+    mesh_sw_punchout_total_iters: int = 100
+    mesh_sw_punchout_genus0_alpha_frac: float = 0.2
+    mesh_sw_punchout_genus0_alpha_auto: bool = True
+    mesh_sw_punchout_genus0_tol: float = 0.1
     # How to pick the final shrinkwrap mesh from the iteration sequence.
     # 'last'     — use the final iteration (default; most tightly fitted).
     # 'min_loss' — use the iteration minimising 0.5*chamfer + 0.5*|Gauss curvature|,

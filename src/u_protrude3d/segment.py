@@ -799,24 +799,25 @@ def segment_protrusions_invariant(
     # 8. Initial height binarization
     # ------------------------------------------------------------------
     icfg = cfg.initial_height
-    if icfg.use_auto:
-        if icfg.use_mean:
-            threshold = np.nanmean(dists)
-        elif icfg.use_otsu:
-            threshold = skfilters.threshold_multiotsu(dists, icfg.otsu_n_levels)[icfg.otsu_level]
-        else:
-            threshold = np.nanmean(dists)
-    else:
-        threshold = icfg.manual_threshold
-
     if icfg.use_local_adaptive:
         smooth_dists = mesh_smooth_scalar(
             mesh, dists, delta=0.5, n_iters=icfg.local_adaptive_smooth_iters,
         )
-        dists_thresh = dists - smooth_dists
-        binary_dists = dists_thresh >= threshold
+        dists_work = dists - smooth_dists
     else:
-        binary_dists = dists >= threshold
+        dists_work = dists
+
+    if icfg.use_auto:
+        if icfg.use_mean:
+            threshold = np.nanmean(dists_work)
+        elif icfg.use_otsu:
+            threshold = skfilters.threshold_multiotsu(dists_work, icfg.otsu_n_levels)[icfg.otsu_level]
+        else:
+            threshold = np.nanmean(dists_work)
+    else:
+        threshold = icfg.manual_threshold
+
+    binary_dists = dists_work >= threshold
     if icfg.min_height_threshold > 0:
         binary_dists = binary_dists & (dists >= icfg.min_height_threshold)
 
@@ -1364,25 +1365,25 @@ def segment_protrusions(
     # 6. Initial height binarization
     # ------------------------------------------------------------------
     icfg = cfg.initial_height
-    if icfg.use_auto:
-        if icfg.use_mean:
-            threshold = np.nanmean(dists)
-        elif icfg.use_otsu:
-            print('hellllloooo')
-            threshold = skfilters.threshold_multiotsu(dists, icfg.otsu_n_levels)[icfg.otsu_level]
-        else:
-            threshold = np.nanmean(dists)
-    else:
-        threshold = icfg.manual_threshold
-
     if icfg.use_local_adaptive:
         smooth_dists = mesh_smooth_scalar(
             mesh, dists, delta=0.5, n_iters=icfg.local_adaptive_smooth_iters,
         )
-        dists_thresh = dists - smooth_dists
-        binary_dists = dists_thresh >= threshold
+        dists_work = dists - smooth_dists
     else:
-        binary_dists = dists >= threshold
+        dists_work = dists
+
+    if icfg.use_auto:
+        if icfg.use_mean:
+            threshold = np.nanmean(dists_work)
+        elif icfg.use_otsu:
+            threshold = skfilters.threshold_multiotsu(dists_work, icfg.otsu_n_levels)[icfg.otsu_level]
+        else:
+            threshold = np.nanmean(dists_work)
+    else:
+        threshold = icfg.manual_threshold
+
+    binary_dists = dists_work >= threshold
 
     # Propagate binary label
     W_geom = meshtools.vertex_geometric_affinity_matrix(

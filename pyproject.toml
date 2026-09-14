@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "u-Protrude3D"
-version = "0.1.1"
+version = "0.1.2"
 description = "3D cell protrusion segmentation, benchmarking, and volumization"
 requires-python = ">=3.9, <3.13"
 authors = [{name='Felix Y. Zhou', email='felixzhou1@gmail.com'}]

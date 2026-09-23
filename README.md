@@ -683,6 +683,5 @@ Feel free to open a [GitHub issue](https://github.com/DanuserLab/u-Protrude3D/is
 
 ## Danuser Lab Links
 
-- [Danuser Lab website](https://www.danuserlab-utsw.org/)
 - [u-Unwrap3D](https://github.com/DanuserLab/u-unwrap3D) — companion library for 3D surface parameterization and topographic mapping
 - [Software releases](https://github.com/DanuserLab)
